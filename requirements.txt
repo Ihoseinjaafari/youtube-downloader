@@ -1,2 +1,2 @@
-streamlit==1.31.0
-yt-dlp==2024.12.23
+streamlit>=1.40.0
+yt-dlp>=2024.12.23
