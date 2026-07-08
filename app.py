@@ -605,8 +605,8 @@ def render_formats_table(formats):
     st.markdown(f"""
     <table class="formats-table">
         <tr><th>کیفیت</th><th>فرمت</th><th>حجم</th><th>کدک</th></tr>
-        {''.join(f"""<tr><td>{f.get('height','?')}p</td><td>{f.get('ext','?')}</td>
-        <td>{format_filesize(f.get('filesize'))}</td><td>{f.get('vcodec','?')[:20]}</td></tr>""" for f in unique[:10])}
+        {''.join('<tr><td>' + str(f.get('height','?')) + 'p</td><td>' + str(f.get('ext','?')) + '</td>'
+        '<td>' + format_filesize(f.get('filesize')) + '</td><td>' + str(f.get('vcodec','?'))[:20] + '</td></tr>' for f in unique[:10])}
     </table>
     """, unsafe_allow_html=True)
 
@@ -614,8 +614,8 @@ def render_formats_table(formats):
         st.markdown(f"""
         <table class="formats-table">
             <tr><th>کیفیت</th><th>فرمت</th><th>حجم</th><th>کدک</th></tr>
-            {''.join(f"""<tr><td>{f.get('tbr','?')}kbps</td><td>{f.get('ext','?')}</td>
-            <td>{format_filesize(f.get('filesize'))}</td><td>{f.get('acodec','?')[:20]}</td></tr>""" for f in audio_formats[:8])}
+            {''.join('<tr><td>' + str(f.get('tbr','?')) + 'kbps</td><td>' + str(f.get('ext','?')) + '</td>'
+            '<td>' + format_filesize(f.get('filesize')) + '</td><td>' + str(f.get('acodec','?'))[:20] + '</td></tr>' for f in audio_formats[:8])}
         </table>
         """, unsafe_allow_html=True)
 
