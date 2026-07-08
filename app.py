@@ -245,6 +245,16 @@ def get_ydl_opts(extra=None):
         'quiet': True,
         'no_warnings': True,
         'ignoreerrors': False,
+        # اضافه کردن هدرهای واقعی برای جلوگیری از خطای 403
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'referer': 'https://www.youtube.com/',
+        # غیرفعال کردن HTTP/2 برای سازگاری بهتر
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-us,en;q=0.5',
+            'Sec-Fetch-Mode': 'navigate',
+        },
     }
     method = st.session_state['cookie_method']
     if method == 'file':
@@ -260,7 +270,12 @@ def get_ydl_opts(extra=None):
 
 # ==================== توابع اطلاعات ویدیو ====================
 def get_video_info(url):
-    ydl_opts = get_ydl_opts()
+    ydl_opts = get_ydl_opts({
+        'extract_flat': False,
+        'no_check_certificate': True,
+        'socket_timeout': 30,
+        'retries': 3,
+    })
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)
         if info is None:
@@ -307,6 +322,15 @@ def download_video(url, format_id_or_option, output_path="downloads"):
     base_opts = get_ydl_opts({
         'outtmpl': os.path.join(output_path, '%(title)s.%(ext)s'),
         'progress_hooks': [progress_hook],
+        # اضافه کردن گزینه‌های اضافی برای جلوگیری از خطای 403
+        'extract_flat': False,
+        'no_check_certificate': True,
+        # استفاده از socket timeout بیشتر
+        'socket_timeout': 30,
+        # تلاش مجدد در صورت شکست
+        'retries': 3,
+        # غیرفعال کردن rate limiting
+        'ratelimit': None,
     })
 
     if format_id_or_option.startswith('id:'):
@@ -382,6 +406,11 @@ def extract_transcript_ytdlp(url, lang='en'):
         'subtitleslangs': [lang],
         'subtitlesformat': 'json3',
         'outtmpl': os.path.join(tmp_dir, '%(id)s.%(ext)s'),
+        # اضافه کردن گزینه‌های اضافی برای جلوگیری از خطای 403
+        'extract_flat': False,
+        'no_check_certificate': True,
+        'socket_timeout': 30,
+        'retries': 3,
     })
 
     with yt_dlp.YoutubeDL(opts) as ydl:
@@ -440,6 +469,11 @@ def extract_transcript_vtt(url, lang='en'):
         'subtitleslangs': [lang],
         'subtitlesformat': 'vtt',
         'outtmpl': os.path.join(tmp_dir, '%(id)s.%(ext)s'),
+        # اضافه کردن گزینه‌های اضافی برای جلوگیری از خطای 403
+        'extract_flat': False,
+        'no_check_certificate': True,
+        'socket_timeout': 30,
+        'retries': 3,
     })
 
     with yt_dlp.YoutubeDL(opts) as ydl:
