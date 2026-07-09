@@ -132,6 +132,64 @@ def get_video_info(url, cookie_file=None, cookie_browser=None):
         return info
 
 
+def get_available_formats(url, cookie_file=None, cookie_browser=None):
+    """دریافت فرمت‌های موجود برای یک ویدیو"""
+    ydl_opts = get_ydl_opts(
+        cookie_file=cookie_file,
+        cookie_browser=cookie_browser,
+        extra={
+            'quiet': True,
+            'no_warnings': True,
+        }
+    )
+    
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        try:
+            info = ydl.extract_info(url, download=False)
+            
+            # اگر پلی‌لیست باشد، اولین ویدیو را بررسی می‌کنیم
+            if 'entries' in info and info['entries']:
+                first_entry = info['entries'][0]
+                if first_entry:
+                    # دریافت اطلاعات کامل اولین ویدیو
+                    video_url = f"https://www.youtube.com/watch?v={first_entry['id']}"
+                    return get_available_formats(video_url, cookie_file, cookie_browser)
+            
+            formats = []
+            if 'formats' in info:
+                for fmt in info['formats']:
+                    format_info = {
+                        'format_id': fmt.get('format_id', ''),
+                        'ext': fmt.get('ext', ''),
+                        'resolution': fmt.get('resolution', fmt.get('height', '')),
+                        'filesize': fmt.get('filesize', fmt.get('filesize_approx', 0)),
+                        'vcodec': fmt.get('vcodec', 'none'),
+                        'acodec': fmt.get('acodec', 'none'),
+                        'fps': fmt.get('fps', ''),
+                        'format_note': fmt.get('format_note', ''),
+                    }
+                    
+                    # فقط فرمت‌هایی که ویدیو یا صدا دارند
+                    if format_info['vcodec'] != 'none' or format_info['acodec'] != 'none':
+                        formats.append(format_info)
+            
+            # اطلاعات کلی ویدیو
+            video_data = {
+                'title': info.get('title', 'Unknown'),
+                'duration': info.get('duration', 0),
+                'uploader': info.get('uploader', 'Unknown'),
+                'thumbnail': info.get('thumbnail', ''),
+                'is_playlist': 'entries' in info,
+                'playlist_count': info.get('playlist_count', 1) if 'entries' in info else 1,
+                'formats': formats
+            }
+            
+            return video_data
+            
+        except Exception as e:
+            return {'error': str(e)}
+
+
 def download_thread(download_id, url, output_format, output_dir, playlist, subtitle_lang, cookie_file=None, cookie_browser=None):
     """دانلود در ترد جداگانه"""
     global download_status, download_history
@@ -439,13 +497,25 @@ HTML_TEMPLATE = """
         <p class="subtitle">دانلود ویدیو، صدا و پلی‌لیست از یوتیوب</p>
         
         <div class="info-box">
-            <strong>💡 نکته:</strong> لینک ویدیو یا پلی‌لیست یوتیوب را وارد کنید و گزینه‌های مورد نظر را انتخاب نمایید.
+            <strong>💡 نکته:</strong> لینک ویدیو یا پلی‌لیست یوتیوب را وارد کنید. پس از وارد کردن لینک، کیفیت‌های موجود نمایش داده می‌شوند.
         </div>
         
         <form id="downloadForm">
             <div class="form-group">
                 <label for="url">لینک یوتیوب:</label>
                 <input type="url" id="url" name="url" placeholder="https://youtube.com/watch?v=..." required>
+                <button type="button" id="checkBtn" class="btn" style="margin-top: 10px; background: linear-gradient(135deg, #28a745 0%, #20c997 100%);">
+                    بررسی لینک و نمایش کیفیت‌ها 🔍
+                </button>
+            </div>
+            
+            <div id="videoInfo" style="display: none; margin-bottom: 20px;">
+                <div class="info-box" style="background: #f0f8ff; border-color: #667eea;">
+                    <img id="videoThumbnail" src="" alt="Thumbnail" style="max-width: 200px; border-radius: 8px; display: block; margin-bottom: 10px;">
+                    <h4 id="videoTitle" style="color: #333; margin-bottom: 5px;"></h4>
+                    <p id="videoDetails" style="color: #666; font-size: 14px;"></p>
+                    <div id="playlistInfo" style="display: none; color: #ffc107; font-weight: bold; margin-top: 10px;"></div>
+                </div>
             </div>
             
             <div class="form-group">
@@ -602,6 +672,87 @@ HTML_TEMPLATE = """
             }
         }
         
+        // بررسی لینک و نمایش اطلاعات ویدیو
+        document.getElementById('checkBtn').addEventListener('click', async function() {
+            const url = document.getElementById('url').value;
+            
+            if (!url) {
+                alert('لطفاً لینک یوتیوب را وارد کنید');
+                return;
+            }
+            
+            const btn = document.getElementById('checkBtn');
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> در حال بررسی...';
+            
+            try {
+                const response = await fetch('/api/formats', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: url })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    const data = result.data;
+                    
+                    // نمایش اطلاعات ویدیو
+                    document.getElementById('videoInfo').style.display = 'block';
+                    document.getElementById('videoTitle').textContent = data.title || 'عنوان نامشخص';
+                    
+                    const duration = formatDuration(data.duration);
+                    document.getElementById('videoDetails').textContent = 
+                        `👤 ${data.uploader || 'نامشخص'} | ⏱️ ${duration}`;
+                    
+                    // نمایش تامبنیل
+                    if (data.thumbnail) {
+                        document.getElementById('videoThumbnail').src = data.thumbnail;
+                        document.getElementById('videoThumbnail').style.display = 'block';
+                    } else {
+                        document.getElementById('videoThumbnail').style.display = 'none';
+                    }
+                    
+                    // اگر پلی‌لیست باشد
+                    if (data.is_playlist) {
+                        document.getElementById('playlistInfo').style.display = 'block';
+                        document.getElementById('playlistInfo').textContent = 
+                            `📋 این یک پلی‌لیست با ${data.playlist_count} ویدیو است`;
+                        
+                        // فعال کردن چک‌باکس پلی‌لیست
+                        document.getElementById('playlist').checked = true;
+                    } else {
+                        document.getElementById('playlistInfo').style.display = 'none';
+                    }
+                    
+                    // افزودن فرمت‌های موجود به سلکت (اختیاری - برای کاربران پیشرفته)
+                    // فعلاً فقط اطلاعات را نمایش می‌دهیم
+                    
+                } else {
+                    alert('خطا در دریافت اطلاعات: ' + result.error);
+                    document.getElementById('videoInfo').style.display = 'none';
+                }
+            } catch (error) {
+                alert('خطا در ارتباط با سرور');
+                document.getElementById('videoInfo').style.display = 'none';
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        });
+        
+        function formatDuration(seconds) {
+            if (!seconds) return 'نامشخص';
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = Math.floor(seconds % 60);
+            if (h > 0) {
+                return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+            }
+            return `${m}:${s.toString().padStart(2, '0')}`;
+        }
+        
         // بارگذاری اولیه تاریخچه
         refreshStatus();
     </script>
@@ -663,6 +814,30 @@ def api_status():
         'downloads': download_status,
         'history': download_history[-20:]  # آخرین ۲۰ مورد
     })
+
+
+@app.route('/api/formats', methods=['POST'])
+def api_formats():
+    """دریافت فرمت‌های موجود برای یک URL"""
+    data = request.json
+    url = data.get('url')
+    
+    if not url:
+        return jsonify({'success': False, 'error': 'URL الزامی است'})
+    
+    try:
+        video_info = get_available_formats(url)
+        
+        if 'error' in video_info:
+            return jsonify({'success': False, 'error': video_info['error']})
+        
+        return jsonify({
+            'success': True,
+            'data': video_info
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
 
 
 def find_available_port(start_port=5000):
