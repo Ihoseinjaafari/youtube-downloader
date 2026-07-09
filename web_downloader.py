@@ -19,7 +19,12 @@ import socket
 # ==================== تنظیمات پیش‌فرض ====================
 DEFAULT_OUTPUT_DIR = "downloads"
 DEFAULT_AUDIO_QUALITY = "320"
+COOKIE_DIR = "cookies"  # پوشه ذخیره فایل‌های کوکی
 app = Flask(__name__)
+
+# اطمینان از وجود پوشه‌ها
+os.makedirs(DEFAULT_OUTPUT_DIR, exist_ok=True)
+os.makedirs(COOKIE_DIR, exist_ok=True)
 
 # نام زبان‌ها
 LANG_NAMES = {
@@ -503,6 +508,25 @@ HTML_TEMPLATE = """
         
         <div class="info-box">
             <strong>💡 نکته:</strong> لینک ویدیو یا پلی‌لیست یوتیوب را وارد کنید. پس از وارد کردن لینک، کیفیت‌های موجود نمایش داده می‌شوند.
+            <br><br>
+            <strong>🍪 مشکل در دریافت اطلاعات؟</strong> اگر با خطا مواجه شدید، فایل کوکی مرورگر خود را آپلود کنید (راهنما در پایین صفحه).
+        </div>
+        
+        <!-- بخش مدیریت کوکی -->
+        <div class="form-group" style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+            <label style="color: #856404;">🍪 مدیریت فایل کوکی (برای رفع محدودیت‌های یوتیوب):</label>
+            <div style="margin-top: 10px;">
+                <input type="file" id="cookieFile" accept=".txt" style="margin-bottom: 10px;">
+                <button type="button" id="uploadCookieBtn" class="btn" style="padding: 10px; font-size: 14px; background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%); color: #000;">
+                    آپلود فایل کوکی 📤
+                </button>
+            </div>
+            <div id="cookieList" style="margin-top: 15px;"></div>
+            <small style="color: #856404; display: block; margin-top: 10px;">
+                📖 راهنما: برای استخراج کوکی از افزونه‌هایی مثل "Get cookies.txt LOCALLY" استفاده کنید یا از دستور 
+                <code style="background: #eee; padding: 2px 5px; border-radius: 3px;">yt-dlp --cookies-from-browser chrome</code>
+                استفاده نمایید.
+            </small>
         </div>
         
         <form id="downloadForm">
@@ -578,6 +602,12 @@ HTML_TEMPLATE = """
             
             const formData = new FormData(this);
             const data = Object.fromEntries(formData);
+            
+            // افزودن فایل کوکی انتخاب شده
+            const cookieSelect = document.getElementById('cookieSelect');
+            if (cookieSelect && cookieSelect.value) {
+                data.cookie_file = cookieSelect.value;
+            }
             
             const btn = document.getElementById('downloadBtn');
             btn.disabled = true;
@@ -691,11 +721,21 @@ HTML_TEMPLATE = """
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner"></span> در حال بررسی...';
             
+            // دریافت فایل کوکی انتخاب شده
+            let selectedCookieFile = null;
+            const cookieSelect = document.getElementById('cookieSelect');
+            if (cookieSelect && cookieSelect.value) {
+                selectedCookieFile = cookieSelect.value;
+            }
+            
             try {
                 const response = await fetch('/api/formats', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url: url })
+                    body: JSON.stringify({ 
+                        url: url,
+                        cookie_file: selectedCookieFile
+                    })
                 });
                 
                 const result = await response.json();
@@ -758,8 +798,114 @@ HTML_TEMPLATE = """
             return `${m}:${s.toString().padStart(2, '0')}`;
         }
         
-        // بارگذاری اولیه تاریخچه
+        // بارگذاری لیست کوکی‌ها
+        async function loadCookies() {
+            try {
+                const response = await fetch('/api/cookies');
+                const result = await response.json();
+                
+                if (result.success && result.cookies.length > 0) {
+                    const cookieList = document.getElementById('cookieList');
+                    let html = '<label style="display: block; margin-top: 10px; color: #856404;">فایل‌های کوکی موجود:</label>';
+                    html += '<select id="cookieSelect" style="width: 100%; padding: 8px; margin-top: 5px; border: 1px solid #ffc107; border-radius: 5px;">';
+                    html += '<option value="">-- بدون کوکی --</option>';
+                    
+                    result.cookies.forEach(cookie => {
+                        const sizeKB = (cookie.size / 1024).toFixed(1);
+                        html += `<option value="${cookie.path}">${cookie.name} (${sizeKB} KB - ${cookie.modified})</option>`;
+                    });
+                    
+                    html += '</select>';
+                    html += '<div style="margin-top: 10px;">';
+                    result.cookies.forEach(cookie => {
+                        html += `<button type="button" onclick="deleteCookie('${cookie.name}')" style="padding: 5px 10px; margin-right: 5px; background: #dc3545; color: white; border: none; border-radius: 3px; cursor: pointer;">حذف ${cookie.name}</button>`;
+                    });
+                    html += '</div>';
+                    
+                    cookieList.innerHTML = html;
+                } else {
+                    document.getElementById('cookieList').innerHTML = '<small style="color: #856404;">هیچ فایل کوکی یافت نشد.</small>';
+                }
+            } catch (error) {
+                console.error('Error loading cookies:', error);
+            }
+        }
+        
+        // آپلود فایل کوکی
+        document.getElementById('uploadCookieBtn').addEventListener('click', async function() {
+            const fileInput = document.getElementById('cookieFile');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('لطفاً یک فایل انتخاب کنید');
+                return;
+            }
+            
+            if (!file.name.endsWith('.txt')) {
+                alert('فایل باید با پسوند .txt باشد');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('cookie', file);
+            
+            const btn = this;
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = 'در حال آپلود...';
+            
+            try {
+                const response = await fetch('/api/upload-cookie', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert('فایل کوکی با موفقیت آپلود شد!');
+                    fileInput.value = '';
+                    loadCookies(); // بارگذاری مجدد لیست
+                } else {
+                    alert('خطا در آپلود: ' + result.error);
+                }
+            } catch (error) {
+                alert('خطا در ارتباط با سرور');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        });
+        
+        // حذف فایل کوکی
+        async function deleteCookie(filename) {
+            if (!confirm(`آیا از حذف فایل ${filename} اطمینان دارید؟`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/delete-cookie', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename: filename })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert('فایل کوکی حذف شد');
+                    loadCookies(); // بارگذاری مجدد لیست
+                } else {
+                    alert('خطا در حذف: ' + result.error);
+                }
+            } catch (error) {
+                alert('خطا در ارتباط با سرور');
+            }
+        }
+        
+        // بارگذاری اولیه تاریخچه و لیست کوکی‌ها
         refreshStatus();
+        loadCookies();
     </script>
 </body>
 </html>
@@ -779,9 +925,15 @@ def api_download():
     playlist = data.get('playlist', False)
     subtitle_lang = data.get('subtitle', 'none')
     output_dir = data.get('output_dir', DEFAULT_OUTPUT_DIR)
+    cookie_file = data.get('cookie_file')
+    cookie_browser = data.get('cookie_browser')
     
     if not url:
         return jsonify({'success': False, 'error': 'URL الزامی است'})
+    
+    # بررسی وجود فایل کوکی
+    if cookie_file and not os.path.exists(cookie_file):
+        cookie_file = None
     
     # ایجاد ID منحصر به فرد
     download_id = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -801,7 +953,7 @@ def api_download():
     
     thread = threading.Thread(
         target=download_thread,
-        args=(download_id, url, output_format, output_dir, playlist, subtitle_lang)
+        args=(download_id, url, output_format, output_dir, playlist, subtitle_lang, cookie_file, cookie_browser)
     )
     thread.daemon = True
     thread.start()
@@ -826,12 +978,18 @@ def api_formats():
     """دریافت فرمت‌های موجود برای یک URL"""
     data = request.json
     url = data.get('url')
+    cookie_file = data.get('cookie_file')
+    cookie_browser = data.get('cookie_browser')
     
     if not url:
         return jsonify({'success': False, 'error': 'URL الزامی است'})
     
+    # بررسی وجود فایل کوکی
+    if cookie_file and not os.path.exists(cookie_file):
+        cookie_file = None
+    
     try:
-        video_info = get_available_formats(url)
+        video_info = get_available_formats(url, cookie_file, cookie_browser)
         
         if 'error' in video_info:
             return jsonify({'success': False, 'error': video_info['error']})
@@ -841,6 +999,80 @@ def api_formats():
             'data': video_info
         })
         
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/api/cookies', methods=['GET'])
+def api_get_cookies():
+    """دریافت لیست فایل‌های کوکی موجود"""
+    try:
+        cookies = []
+        if os.path.exists(COOKIE_DIR):
+            for f in os.listdir(COOKIE_DIR):
+                if f.endswith('.txt'):
+                    file_path = os.path.join(COOKIE_DIR, f)
+                    file_size = os.path.getsize(file_path)
+                    file_time = datetime.fromtimestamp(os.path.getmtime(file_path))
+                    cookies.append({
+                        'name': f,
+                        'path': file_path,
+                        'size': file_size,
+                        'modified': file_time.strftime('%Y-%m-%d %H:%M:%S')
+                    })
+        return jsonify({'success': True, 'cookies': cookies})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/api/upload-cookie', methods=['POST'])
+def api_upload_cookie():
+    """آپلود فایل کوکی"""
+    try:
+        if 'cookie' not in request.files:
+            return jsonify({'success': False, 'error': 'فایل کوکی ارسال نشده است'})
+        
+        file = request.files['cookie']
+        if file.filename == '':
+            return jsonify({'success': False, 'error': 'نام فایل خالی است'})
+        
+        if not file.filename.endswith('.txt'):
+            return jsonify({'success': False, 'error': 'فایل باید با پسوند .txt باشد'})
+        
+        # ذخیره فایل
+        save_path = os.path.join(COOKIE_DIR, file.filename)
+        file.save(save_path)
+        
+        return jsonify({
+            'success': True,
+            'message': 'فایل کوکی با موفقیت آپلود شد',
+            'path': save_path
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/api/delete-cookie', methods=['POST'])
+def api_delete_cookie():
+    """حذف فایل کوکی"""
+    try:
+        data = request.json
+        filename = data.get('filename')
+        
+        if not filename:
+            return jsonify({'success': False, 'error': 'نام فایل الزامی است'})
+        
+        # جلوگیری از حذف فایل‌های خارج از پوشه کوکی
+        if '..' in filename or '/' in filename or '\\' in filename:
+            return jsonify({'success': False, 'error': 'نام فایل نامعتبر است'})
+        
+        file_path = os.path.join(COOKIE_DIR, filename)
+        
+        if not os.path.exists(file_path):
+            return jsonify({'success': False, 'error': 'فایل یافت نشد'})
+        
+        os.remove(file_path)
+        return jsonify({'success': True, 'message': 'فایل کوکی حذف شد'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
