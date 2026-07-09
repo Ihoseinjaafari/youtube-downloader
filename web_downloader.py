@@ -81,8 +81,11 @@ def get_ydl_opts(cookie_file=None, cookie_browser=None, extra=None):
             'Sec-Fetch-Mode': 'navigate',
         },
         'no_check_certificate': True,
-        'socket_timeout': 30,
-        'retries': 3,
+        'socket_timeout': 60,
+        'retries': 5,
+        'extractor_retries': 3,
+        'fragment_retries': 3,
+        'retry_sleep': 2,
     }
     
     if cookie_file and os.path.exists(cookie_file):
@@ -140,6 +143,7 @@ def get_available_formats(url, cookie_file=None, cookie_browser=None):
         extra={
             'quiet': True,
             'no_warnings': True,
+            'extract_flat': False,
         }
     )
     
@@ -187,6 +191,7 @@ def get_available_formats(url, cookie_file=None, cookie_browser=None):
             return video_data
             
         except Exception as e:
+            print(f"Error getting formats: {e}")
             return {'error': str(e)}
 
 
